@@ -167,7 +167,26 @@ fn mlp(
     rms_w: &Tensor<f32>,
     eps: f32,
 ) {
-    todo!("Implement mlp");
+    // 1. RMS Normalization
+    OP::rms_norm(hidden_states, residual, rms_w, eps);
+
+    // 2. 计算 Gate 和 Up
+    OP::matmul_transb(gate, 0.0, hidden_states, w_gate, 1.0); // gate = hidden @ gate_weight.T
+    OP::matmul_transb(up, 0.0, hidden_states, w_up, 1.0); // up = hidden @ up_weight.T
+
+    // 3. 计算中间状态 intermediate = gate * sigmoid(gate) * up
+    OP::silu(up, gate);
+
+    // 4. 计算输出并更新 residual
+    let mut output = Tensor::<f32>::default(&residual.shape());
+    OP::matmul_transb(&mut output, 0.0, up, w_down, 1.0); // output = intermediate @ down_weight.T
+
+    let output_data = output.data();
+    let residual_data = unsafe { residual.data_mut() };
+
+    for (res, &out) in residual_data.iter_mut().zip(output_data.iter()) {
+        *res += out;
+    }
 }
 
 #[test]
